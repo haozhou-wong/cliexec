@@ -25,6 +25,11 @@ classifiers = [
 ]
 dependencies = ["click>=8.1,<9"]
 
+[project.urls]
+Homepage = "https://github.com/haozhou-wong/cliexec"
+Repository = "https://github.com/haozhou-wong/cliexec"
+Issues = "https://github.com/haozhou-wong/cliexec/issues"
+
 [project.scripts]
 cliexec = "cliexec.cli:main"
 
@@ -48,4 +53,3 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
-
