@@ -1,0 +1,52 @@
+enabled = true
+command = ["claude", "--print", "--output-format", "json", "--no-session-persistence", "--safe-mode"]
+success_exit_codes = [0]
+allow_unrestricted = false
+
+[input]
+mode = "stdin"
+
+[output]
+format = "json"
+field = "result"
+collect = "last"
+
+[modes.read_only]
+args = ["--permission-mode", "plan"]
+
+[modes.workspace_write]
+args = ["--permission-mode", "acceptEdits"]
+
+[modes.unrestricted]
+args = ["--dangerously-skip-permissions"]
+
+[env]
+pass = [
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_BASE_URL",
+  "CLAUDE_CONFIG_DIR",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "AWS_PROFILE",
+  "AWS_REGION",
+  "AWS_DEFAULT_REGION",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_SESSION_TOKEN",
+  "GOOGLE_APPLICATION_CREDENTIALS",
+]
+
+[probe]
+version_args = ["--version"]
+version_regex = '(?P<version>\d+\.\d+\.\d+)'
+tested_versions = ">=2.1.209,<2.2.0"
+help_args = ["--help"]
+help_contains = [
+  "--print",
+  "--output-format",
+  "--permission-mode",
+  "--no-session-persistence",
+  "--safe-mode",
+]

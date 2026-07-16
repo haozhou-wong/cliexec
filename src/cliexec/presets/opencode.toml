@@ -1,0 +1,44 @@
+enabled = true
+command = ["opencode", "run", "--pure", "--format", "json"]
+success_exit_codes = [0]
+allow_unrestricted = false
+
+[input]
+mode = "stdin"
+file_args = ["--file", "{path}"]
+image_args = ["--file", "{path}"]
+
+[output]
+format = "jsonl"
+match = { type = "text" }
+field = "part.text"
+collect = "last"
+
+[modes.read_only]
+args = ["--agent", "plan"]
+
+[modes.workspace_write]
+args = ["--agent", "build"]
+
+[modes.unrestricted]
+args = ["--agent", "build", "--auto"]
+
+[env]
+pass = [
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "GOOGLE_GENERATIVE_AI_API_KEY",
+  "AWS_PROFILE",
+  "AWS_REGION",
+  "AWS_DEFAULT_REGION",
+  "OPENCODE_CONFIG",
+  "OPENCODE_CONFIG_DIR",
+  "OPENCODE_CONFIG_CONTENT",
+]
+
+[probe]
+version_args = ["--version"]
+version_regex = '(?P<version>\d+\.\d+\.\d+)'
+tested_versions = ">=1.18.2,<1.19.0"
+help_args = ["run", "--help"]
+help_contains = ["--pure", "--format", "--file", "--agent", "--auto"]

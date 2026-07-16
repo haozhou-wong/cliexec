@@ -1,0 +1,4 @@
+interface:
+  display_name: "CLIExec"
+  short_description: "Delegate bounded tasks to another Agent CLI"
+  default_prompt: "Use $cliexec to delegate this bounded task to the best configured Agent CLI and return its final result."

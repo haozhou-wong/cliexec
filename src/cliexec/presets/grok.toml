@@ -1,0 +1,37 @@
+enabled = true
+command = ["grok", "--output-format", "plain", "--no-memory", "--no-subagents"]
+success_exit_codes = [0]
+allow_unrestricted = false
+
+[input]
+mode = "argv"
+prompt_arg = "--single={prompt}"
+
+[output]
+format = "text"
+collect = "last"
+
+[modes.read_only]
+args = ["--permission-mode", "plan"]
+
+[modes.workspace_write]
+args = ["--permission-mode", "acceptEdits"]
+
+[modes.unrestricted]
+args = ["--permission-mode", "bypassPermissions", "--always-approve"]
+
+[env]
+pass = ["XAI_API_KEY", "GROK_HOME", "GROK_SANDBOX"]
+
+[probe]
+version_args = ["--version"]
+version_regex = '(?P<version>\d+\.\d+\.\d+)'
+tested_versions = ">=0.2.101,<0.3.0"
+help_args = ["--help"]
+help_contains = [
+  "--single",
+  "--output-format",
+  "--permission-mode",
+  "--no-memory",
+  "--no-subagents",
+]

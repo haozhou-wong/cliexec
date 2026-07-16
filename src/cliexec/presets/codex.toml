@@ -1,0 +1,49 @@
+enabled = true
+command = [
+  "codex",
+  "exec",
+  "--ephemeral",
+  "--skip-git-repo-check",
+  "--color",
+  "never",
+  "--json",
+  "--config",
+  'approval_policy="never"',
+]
+success_exit_codes = [0]
+allow_unrestricted = false
+
+[input]
+mode = "stdin"
+image_args = ["--image", "{path}"]
+
+[output]
+format = "jsonl"
+match = { type = "item.completed", "item.type" = "agent_message" }
+field = "item.text"
+collect = "last"
+
+[modes.read_only]
+args = ["--sandbox", "read-only"]
+
+[modes.workspace_write]
+args = ["--sandbox", "workspace-write"]
+
+[modes.unrestricted]
+args = ["--sandbox", "danger-full-access"]
+
+[env]
+pass = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_HOME"]
+
+[probe]
+version_args = ["--version"]
+version_regex = '(?P<version>\d+\.\d+\.\d+)'
+tested_versions = ">=0.144.3,<0.145.0"
+help_args = ["exec", "--help"]
+help_contains = [
+  "--json",
+  "--sandbox",
+  "--ephemeral",
+  "--image",
+  "--skip-git-repo-check",
+]
