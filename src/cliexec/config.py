@@ -115,7 +115,7 @@ class AgentConfig:
     def from_dict(cls, value: dict[str, Any]) -> AgentConfig:
         raw = copy.deepcopy(value)
         name = str(raw.pop("name"))
-        return _parse_agent(name, raw, builtin=bool(raw.get("builtin", False)))
+        return _parse_agent(name, raw)
 
 
 @dataclass(slots=True)
@@ -147,6 +147,12 @@ def _string_tuple(value: object, context: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise CLIExecError(CONFIG_ERROR, f"{context} must be an array of strings")
     return tuple(value)
+
+
+def _boolean(value: object, context: str) -> bool:
+    if not isinstance(value, bool):
+        raise CLIExecError(CONFIG_ERROR, f"{context} must be a boolean")
+    return value
 
 
 def _parse_policy(value: dict[str, Any]) -> PolicyConfig:
@@ -187,7 +193,7 @@ def _parse_policy(value: dict[str, Any]) -> PolicyConfig:
     return policy
 
 
-def _parse_agent(name: str, value: dict[str, Any], *, builtin: bool) -> AgentConfig:
+def _parse_agent(name: str, value: dict[str, Any]) -> AgentConfig:
     if not _AGENT_NAME_RE.fullmatch(name):
         raise CLIExecError(CONFIG_ERROR, f"invalid agent name: {name!r}")
     _unknown_keys(
@@ -318,15 +324,17 @@ def _parse_agent(name: str, value: dict[str, Any], *, builtin: bool) -> AgentCon
     return AgentConfig(
         name=name,
         command=command,
-        enabled=bool(value.get("enabled", True)),
+        enabled=_boolean(value.get("enabled", True), f"agents.{name}.enabled"),
         success_exit_codes=tuple(codes),
-        allow_unrestricted=bool(value.get("allow_unrestricted", False)),
+        allow_unrestricted=_boolean(
+            value.get("allow_unrestricted", False), f"agents.{name}.allow_unrestricted"
+        ),
         input=input_config,
         output=output_config,
         modes=modes,
         env_pass=_string_tuple(env_raw.get("pass", []), f"agents.{name}.env.pass"),
         probe=probe,
-        builtin=builtin or bool(value.get("builtin", False)),
+        builtin=_boolean(value.get("builtin", False), f"agents.{name}.builtin"),
     )
 
 
@@ -410,7 +418,7 @@ def load_config(explicit_path: Path | None = None) -> AppConfig:
     for name, raw in resolved.get("agents", {}).items():
         if not isinstance(raw, dict):
             raise CLIExecError(CONFIG_ERROR, f"agents.{name} must be a table")
-        agents[name] = _parse_agent(name, raw, builtin=bool(raw.get("builtin", False)))
+        agents[name] = _parse_agent(name, raw)
     return AppConfig(policy=policy, agents=agents, raw=resolved, sources=tuple(sources))
 
 

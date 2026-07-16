@@ -12,7 +12,7 @@ from typing import Any, TypeVar
 import click
 
 from . import __version__
-from .config import AppConfig, PolicyConfig, default_user_config, load_config
+from .config import AppConfig, default_user_config, load_config
 from .doctor import check_agents
 from .errors import CLIExecError
 from .models import SCHEMA_VERSION, Permission, TaskRequest, TaskState
@@ -188,13 +188,8 @@ def _emit_task(data: dict[str, Any], output_format: str, *, terminal_exit: bool)
     return result_exit_code(data) if terminal_exit else 0
 
 
-def _state_service() -> TaskService:
-    config = AppConfig(
-        policy=PolicyConfig(),
-        agents={},
-        raw={"version": SCHEMA_VERSION, "policy": {}, "agents": {}},
-    )
-    return TaskService(config=config)
+def _state_service(config_path: Path | None) -> TaskService:
+    return TaskService(config_path=config_path)
 
 
 def _agent_summaries(config: AppConfig) -> list[dict[str, Any]]:
@@ -286,8 +281,8 @@ def agents_command(
 @click.pass_context
 def runs_command(context: click.Context, output_format: str | None) -> int:
     """List retained task runs, newest first."""
-    _, resolved_format = _resolved_common(context, None, output_format)
-    _emit({"runs": _state_service().list_runs()}, output_format=resolved_format)
+    resolved_config, resolved_format = _resolved_common(context, None, output_format)
+    _emit({"runs": _state_service(resolved_config).list_runs()}, output_format=resolved_format)
     return 0
 
 
@@ -393,8 +388,8 @@ def start_command(
 @click.pass_context
 def status_command(context: click.Context, run_id: str, output_format: str | None) -> int:
     """Return the current state for a run."""
-    _, resolved_format = _resolved_common(context, None, output_format)
-    _emit(_state_service().status(run_id), output_format=resolved_format)
+    resolved_config, resolved_format = _resolved_common(context, None, output_format)
+    _emit(_state_service(resolved_config).status(run_id), output_format=resolved_format)
     return 0
 
 
@@ -404,8 +399,8 @@ def status_command(context: click.Context, run_id: str, output_format: str | Non
 @click.pass_context
 def result_command(context: click.Context, run_id: str, output_format: str | None) -> int:
     """Return a terminal run's normalized result."""
-    _, resolved_format = _resolved_common(context, None, output_format)
-    data = _state_service().result(run_id)
+    resolved_config, resolved_format = _resolved_common(context, None, output_format)
+    data = _state_service(resolved_config).result(run_id)
     return _emit_task(data, resolved_format, terminal_exit=True)
 
 
@@ -415,8 +410,8 @@ def result_command(context: click.Context, run_id: str, output_format: str | Non
 @click.pass_context
 def cancel_command(context: click.Context, run_id: str, output_format: str | None) -> int:
     """Cancel a run and its complete child process group."""
-    _, resolved_format = _resolved_common(context, None, output_format)
-    _emit(_state_service().cancel(run_id), output_format=resolved_format)
+    resolved_config, resolved_format = _resolved_common(context, None, output_format)
+    _emit(_state_service(resolved_config).cancel(run_id), output_format=resolved_format)
     return 0
 
 

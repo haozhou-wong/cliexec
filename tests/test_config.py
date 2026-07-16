@@ -48,6 +48,23 @@ def test_unknown_config_field_is_rejected(tmp_path: Path, monkeypatch) -> None:
     assert "unknown" in raised.value.message
 
 
+@pytest.mark.parametrize("field", ["enabled", "allow_unrestricted"])
+def test_agent_boolean_fields_reject_strings(tmp_path: Path, monkeypatch, field: str) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "user-config"))
+    config_path = write_mock_config(tmp_path / "config.toml")
+    content = config_path.read_text(encoding="utf-8").replace(
+        f"{field} = false" if field == "allow_unrestricted" else f"{field} = true",
+        f'{field} = "false"',
+    )
+    config_path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(CLIExecError) as raised:
+        load_config(config_path)
+
+    assert raised.value.code == CONFIG_ERROR
+    assert f"agents.mock.{field} must be a boolean" in raised.value.message
+
+
 def test_project_config_is_not_loaded_implicitly(
     tmp_path: Path,
     monkeypatch,
