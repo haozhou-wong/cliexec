@@ -46,7 +46,11 @@ class _InstallPlan:
 
 
 def _source_files() -> dict[Path, bytes]:
-    root = files("cliexec").joinpath("assets", "skills", "cliexec")
+    root = files("cliexec").joinpath("skills", "cliexec")
+    if not root.is_dir():
+        root = Path(__file__).resolve().parents[2] / "skills" / "cliexec"
+    if not root.is_dir():
+        raise CLIExecError("SKILL_RESOURCE_ERROR", "packaged CLIExec Skill is missing")
     collected: dict[Path, bytes] = {}
 
     def collect(resource: Traversable, relative: Path) -> None:

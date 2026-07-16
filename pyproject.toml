@@ -43,6 +43,12 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/cliexec"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"skills/cliexec" = "cliexec/skills/cliexec"
+
+[tool.hatch.build.targets.sdist.force-include]
+"skills/cliexec" = "skills/cliexec"
+
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]

@@ -74,7 +74,7 @@ cliexec doctor codex
 cliexec skill install --target all
 ```
 
-直接在终端使用 CLIExec 时不必安装 Skill。Controller 的工作方式、任务命令、结果契约、exit code 和失败处理规则都在 [CLIExec Skill](src/cliexec/assets/skills/cliexec/SKILL.md) 中；手动操作也可以查看 `cliexec --help`。
+直接在终端使用 CLIExec 时不必安装 Skill。Controller 的工作方式、任务命令、结果契约、exit code 和失败处理规则都在 [CLIExec Skill](skills/cliexec/SKILL.md) 中；手动操作也可以查看 `cliexec --help`。
 
 ## 配置 CLIExec
 

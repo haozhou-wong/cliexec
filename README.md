@@ -74,7 +74,7 @@ Install the packaged Skill if Claude Code or Codex will use CLIExec as a control
 cliexec skill install --target all
 ```
 
-The Skill is optional for direct terminal use. It contains the controller workflow, task commands, result contract, exit codes, and failure-handling rules. See [the packaged CLIExec Skill](src/cliexec/assets/skills/cliexec/SKILL.md) or run `cliexec --help` when using the CLI manually.
+The Skill is optional for direct terminal use. It contains the controller workflow, task commands, result contract, exit codes, and failure-handling rules. See [the packaged CLIExec Skill](skills/cliexec/SKILL.md) or run `cliexec --help` when using the CLI manually.
 
 ## Configure CLIExec
 
