@@ -17,6 +17,10 @@ from .errors import (
 )
 from .models import Permission, TaskRequest
 
+NESTED_DELEGATION_INSTRUCTION = (
+    "CLIExec execution constraint: Do not invoke CLIExec or delegate this task to another agent."
+)
+
 
 @dataclass(slots=True)
 class SpawnSpec:
@@ -39,6 +43,10 @@ def _expand_many(template: tuple[str, ...], paths: Iterable[Path]) -> list[str]:
     for path in paths:
         result.extend(_expand(template, "path", str(path)))
     return result
+
+
+def _worker_prompt(prompt: str) -> str:
+    return f"{prompt}\n\n{NESTED_DELEGATION_INSTRUCTION}"
 
 
 def build_command(
@@ -84,9 +92,10 @@ def build_command(
             argv.extend(agent.session.new_args)
     argv.extend(_expand_many(agent.input.file_args, request.files))
     argv.extend(_expand_many(agent.input.image_args, request.images))
-    stdin_text: str | None = request.prompt
+    worker_prompt = _worker_prompt(request.prompt)
+    stdin_text: str | None = worker_prompt
     if agent.input.mode == "argv":
-        argv.append(_replace(agent.input.prompt_arg, "prompt", request.prompt))
+        argv.append(_replace(agent.input.prompt_arg, "prompt", worker_prompt))
         stdin_text = None
 
     executable = argv[0]

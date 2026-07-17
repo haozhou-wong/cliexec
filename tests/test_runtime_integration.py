@@ -7,9 +7,19 @@ from pathlib import Path
 import pytest
 from conftest import decode_stdout, wait_until, write_mock_config
 
+from cliexec.adapter import NESTED_DELEGATION_INSTRUCTION
+
 
 def _run_args(config: Path, cwd: Path, *extra: str) -> tuple[str, ...]:
     return ("run", "mock", "--config", str(config), "--cwd", str(cwd), *extra)
+
+
+def _worker_prompt(prompt: str) -> str:
+    return f"{prompt}\n\n{NESTED_DELEGATION_INSTRUCTION}"
+
+
+def _session_result(*prompts: str) -> str:
+    return "final:" + "|".join(_worker_prompt(prompt) for prompt in prompts)
 
 
 @pytest.mark.parametrize(
@@ -46,10 +56,13 @@ def test_run_parses_text_json_and_jsonl(
     data = payload["data"]
     assert data["state"] == "completed"
     assert data["succeeded"] is True
-    assert data["final_text"] == "final:review this"
+    assert data["final_text"] == _session_result("review this")
     assert data["conversation_id"] is None
     assert data["parent_run_id"] is None
     assert data["resumable"] is False
+    request_path = tmp_path / "state" / "cliexec" / "runs" / data["run_id"] / "request.json"
+    stored_request = json.loads(request_path.read_text(encoding="utf-8"))
+    assert stored_request["request"]["prompt"] == "review this"
 
 
 def test_argv_input_substitutes_prompt_as_one_argument(tmp_path: Path, invoke_cli) -> None:
@@ -63,7 +76,7 @@ def test_argv_input_substitutes_prompt_as_one_argument(tmp_path: Path, invoke_cl
 
     payload = decode_stdout(result)
     assert result.returncode == 0, result.stderr
-    assert payload["data"]["final_text"] == "argv:spaces ; $(are literal)"
+    assert payload["data"]["final_text"] == f"argv:{_worker_prompt('spaces ; $(are literal)')}"
 
 
 @pytest.mark.parametrize("mode", ["malformed-json", "empty"])
@@ -96,7 +109,7 @@ def test_nonzero_exit_preserves_partial_text(tmp_path: Path, invoke_cli) -> None
     assert result.returncode == 1
     assert data["state"] == "failed"
     assert data["exit_code"] == 7
-    assert data["partial_text"] == "final:keep me"
+    assert data["partial_text"] == _session_result("keep me")
     assert data["error"]["code"] == "NONZERO_EXIT"
 
 
@@ -274,7 +287,7 @@ resume_args = ["--resume", "{session_id}"]
     first_id = first_data["run_id"]
 
     assert first.returncode == 0
-    assert first_data["final_text"] == "final:first"
+    assert first_data["final_text"] == _session_result("first")
     assert first_data["conversation_id"]
     assert first_data["parent_run_id"] is None
     assert first_data["resumable"] is True
@@ -292,7 +305,7 @@ resume_args = ["--resume", "{session_id}"]
     second_data = decode_stdout(second)["data"]
 
     assert second.returncode == 0
-    assert second_data["final_text"] == "final:first|second"
+    assert second_data["final_text"] == _session_result("first", "second")
     assert second_data["conversation_id"] == first_data["conversation_id"]
     assert second_data["parent_run_id"] == first_id
     assert second_data["permission"]["requested"] == "read_only"
@@ -352,7 +365,7 @@ id_field = "session_id"
 
     assert first.returncode == 0
     assert second.returncode == 0
-    assert second_data["final_text"] == "final:first|second"
+    assert second_data["final_text"] == _session_result("first", "second")
     assert second_data["conversation_id"] == first_data["conversation_id"]
 
 
@@ -376,7 +389,7 @@ id_field = "session_id"
     assert result.returncode == 1
     assert data["state"] == "failed"
     assert data["error"]["code"] == "PROTOCOL_ERROR"
-    assert data["partial_text"] == "final:prompt"
+    assert data["partial_text"] == _session_result("prompt")
     assert data["resumable"] is False
 
 
@@ -453,7 +466,7 @@ resume_args = ["--resume", "{session_id}"]
     assert wrong_agent.returncode == 2
     assert decode_stdout(wrong_agent)["error"]["code"] == "INVALID_REQUEST"
     assert retry.returncode == 0
-    assert decode_stdout(retry)["data"]["final_text"] == "final:first|retry"
+    assert decode_stdout(retry)["data"]["final_text"] == _session_result("first", "retry")
 
 
 @pytest.mark.parametrize(
@@ -505,7 +518,7 @@ resume_args = ["--resume", "{session_id}"]
     )
 
     assert continued.returncode == 0
-    assert decode_stdout(continued)["data"]["final_text"] == "final:first|retry"
+    assert decode_stdout(continued)["data"]["final_text"] == _session_result("first", "retry")
 
 
 def test_cancelled_session_can_be_continued(tmp_path: Path, invoke_cli) -> None:
@@ -557,7 +570,7 @@ resume_args = ["--resume", "{session_id}"]
     )
 
     assert continued.returncode == 0
-    assert decode_stdout(continued)["data"]["final_text"] == "final:first|retry"
+    assert decode_stdout(continued)["data"]["final_text"] == _session_result("first", "retry")
 
 
 def test_rejected_continuation_does_not_consume_parent_tip(tmp_path: Path, invoke_cli) -> None:
@@ -631,7 +644,7 @@ resume_args = ["--resume", "{session_id}"]
     )
 
     assert retry.returncode == 0
-    assert decode_stdout(retry)["data"]["final_text"] == "final:first|retry"
+    assert decode_stdout(retry)["data"]["final_text"] == _session_result("first", "retry")
 
 
 def test_start_reserves_continuation_tip_while_child_is_active(tmp_path: Path, invoke_cli) -> None:

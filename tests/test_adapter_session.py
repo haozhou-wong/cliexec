@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from cliexec.adapter import build_command, parse_session_id
+from cliexec.adapter import (
+    NESTED_DELEGATION_INSTRUCTION,
+    build_command,
+    parse_session_id,
+)
 from cliexec.config import AgentConfig, InputConfig, OutputConfig, SessionConfig
 from cliexec.errors import PROTOCOL_ERROR, CLIExecError
 from cliexec.models import Permission, TaskRequest
@@ -34,6 +38,10 @@ def _request(cwd: Path) -> TaskRequest:
         cwd=cwd,
         images=[cwd / "image.png"],
     )
+
+
+def _expected_prompt(prompt: str) -> str:
+    return f"{prompt}\n\n{NESTED_DELEGATION_INSTRUCTION}"
 
 
 def test_generated_session_args_are_used_for_new_and_resumed_runs(tmp_path: Path) -> None:
@@ -69,6 +77,32 @@ def test_generated_session_args_are_used_for_new_and_resumed_runs(tmp_path: Path
         "--image",
         str(tmp_path / "image.png"),
     ]
+    assert initial.stdin_text == _expected_prompt("next turn")
+    assert resumed.stdin_text == _expected_prompt("next turn")
+    assert resumed.stdin_text.count(NESTED_DELEGATION_INSTRUCTION) == 1
+    assert request.prompt == "next turn"
+
+
+def test_argv_prompt_includes_nested_delegation_instruction(tmp_path: Path) -> None:
+    agent = _agent(
+        SessionConfig(
+            id_strategy="generated",
+            new_args=("--session-id", "{session_id}"),
+            resume_args=("--resume", "{session_id}"),
+        )
+    )
+    agent.input = InputConfig(
+        mode="argv",
+        prompt_arg="--prompt={prompt}",
+        image_args=("--image", "{path}"),
+    )
+    request = _request(tmp_path)
+
+    spec = build_command(agent, request, run_id="run-1", native_session_id="session-1")
+
+    assert spec.stdin_text is None
+    assert spec.argv[-1] == f"--prompt={_expected_prompt('next turn')}"
+    assert request.prompt == "next turn"
 
 
 def test_output_session_id_is_extracted_and_deduplicated(tmp_path: Path) -> None:
