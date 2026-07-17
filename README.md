@@ -77,28 +77,7 @@ Install the packaged Skill if Claude Code or Codex will use CLIExec as a control
 cliexec skill install --target all
 ```
 
-The Skill is optional for direct terminal use. It contains the controller workflow, task commands, result contract, exit codes, and failure-handling rules. See [the packaged CLIExec Skill](skills/cliexec/SKILL.md) or run `cliexec --help` when using the CLI manually.
-
-## Continue a worker conversation
-
-Supported presets persist a native worker session by default. Continue the latest terminal run explicitly:
-
-```bash
-cliexec run codex --cwd "$PWD" <<'EOF'
-Review the current implementation.
-EOF
-
-# Read RUN_ID from data.run_id in the JSON response.
-cliexec run codex --continue RUN_ID <<'EOF'
-Now focus on the concurrency issue you identified.
-EOF
-```
-
-Every turn receives a new `run_id`. Runs in the same linear conversation share a CLIExec `conversation_id`, and `parent_run_id` records the direct predecessor. Only the latest terminal tip can be continued; attempting to branch from an older run returns `CONVERSATION_CONFLICT`. The agent and resolved working directory cannot change. Permission, timeout, files, and images are evaluated independently for each turn, so permission defaults back to `read_only` and attachments are not repeated automatically.
-
-Failed, timed-out, and cancelled tips remain resumable when CLIExec captured a reliable native session ID. Rejected runs and runs without an ID are not resumable. CLIExec does not expose native IDs as normalized fields; raw worker logs may still contain them. Use `--continue RUN_ID`, not a provider-specific session ID.
-
-CLIExec does not provide a cross-worker ephemeral switch. Native session storage and retention are controlled by each worker.
+The Skill is optional for direct terminal use. Run `cliexec --help` for manual usage; session-capable workers can continue the latest terminal run with `cliexec run AGENT --continue RUN_ID`. See the [packaged CLIExec Skill](skills/cliexec/SKILL.md) for the controller workflow, task commands, result contract, exit codes, failure handling, and complete continuation rules.
 
 ## Configure CLIExec
 

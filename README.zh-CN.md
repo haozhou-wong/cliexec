@@ -77,28 +77,7 @@ cliexec doctor codex
 cliexec skill install --target all
 ```
 
-直接在终端使用 CLIExec 时不必安装 Skill。Controller 的工作方式、任务命令、结果契约、exit code 和失败处理规则都在 [CLIExec Skill](skills/cliexec/SKILL.md) 中；手动操作也可以查看 `cliexec --help`。
-
-## 继续 worker 对话
-
-支持 session 的 preset 默认持久化 worker 原生会话。通过最新的 terminal run 精确续接：
-
-```bash
-cliexec run codex --cwd "$PWD" <<'EOF'
-审查当前实现。
-EOF
-
-# 从上一个 JSON 响应的 data.run_id 取得 RUN_ID。
-cliexec run codex --continue RUN_ID <<'EOF'
-现在重点分析你刚才指出的并发问题。
-EOF
-```
-
-每一轮都会获得新的 `run_id`。同一条线性对话中的 run 共享 CLIExec `conversation_id`，`parent_run_id` 记录直接前序。只有最新的 terminal tip 可以续接；从旧 run 分支会返回 `CONVERSATION_CONFLICT`。Agent 和 resolved working directory 不能改变。Permission、timeout、file 和 image 每轮独立计算，因此 permission 会重新默认为 `read_only`，附件也不会自动重复传入。
-
-只要 CLIExec 已获得可靠的原生 session ID，failed、timed-out 和 cancelled tip 仍可续接；rejected 或没有 ID 的 run 不可续接。CLIExec 不会把原生 ID 暴露为标准化字段，但 raw worker log 仍可能包含它。调用者应使用 `--continue RUN_ID`。
-
-CLIExec 不提供跨 worker 的统一 ephemeral 开关；原生 session 的存储和保留由各 worker 控制。
+直接在终端使用 CLIExec 时不必安装 Skill。手动操作可以查看 `cliexec --help`；支持 session 的 worker 可通过 `cliexec run AGENT --continue RUN_ID` 续接最新的 terminal run。Controller 的工作方式、任务命令、结果契约、exit code、失败处理和完整续接规则见 [CLIExec Skill](skills/cliexec/SKILL.md)。
 
 ## 配置 CLIExec
 
