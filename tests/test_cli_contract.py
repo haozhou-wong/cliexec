@@ -45,3 +45,20 @@ def test_click_usage_error_uses_same_json_contract(invoke_cli) -> None:
     assert envelope["ok"] is False
     assert envelope["data"] is None
     assert envelope["error"]["code"] == "USAGE_ERROR"
+
+
+def test_agents_report_declarative_session_capability(invoke_cli) -> None:
+    result = invoke_cli("agents")
+
+    agents = {
+        agent["name"]: agent["capabilities"]["sessions"]
+        for agent in json.loads(result.stdout)["data"]["agents"]
+    }
+
+    assert agents == {
+        "agy": False,
+        "claude": True,
+        "codex": True,
+        "grok": True,
+        "opencode": True,
+    }

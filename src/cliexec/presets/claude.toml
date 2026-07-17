@@ -1,5 +1,5 @@
 enabled = true
-command = ["claude", "--print", "--output-format", "json", "--no-session-persistence", "--safe-mode"]
+command = ["claude", "--print", "--output-format", "json", "--safe-mode"]
 success_exit_codes = [0]
 allow_unrestricted = false
 
@@ -10,6 +10,11 @@ mode = "stdin"
 format = "json"
 field = "result"
 collect = "last"
+
+[session]
+id_strategy = "generated"
+new_args = ["--session-id", "{session_id}"]
+resume_args = ["--resume", "{session_id}"]
 
 [modes.read_only]
 args = ["--permission-mode", "plan"]
@@ -47,6 +52,7 @@ help_contains = [
   "--print",
   "--output-format",
   "--permission-mode",
-  "--no-session-persistence",
+  "--resume",
+  "--session-id",
   "--safe-mode",
 ]

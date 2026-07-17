@@ -1,4 +1,4 @@
-"""CLIExec: delegate one-shot tasks to local agent CLIs."""
+"""CLIExec: delegate bounded task turns to local agent CLIs."""
 
 from .models import Permission, TaskRequest, TaskState
 

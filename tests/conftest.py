@@ -62,12 +62,16 @@ def write_mock_config(
     env_pass: list[str] | None = None,
     max_concurrency: int = 4,
     max_output_bytes: int = 67_108_864,
+    session_toml: str = "",
 ) -> Path:
     args = [sys.executable, str(MOCK_AGENT), "--mode", mode, *(command_args or [])]
     command = json.dumps(args)
     passed = json.dumps(env_pass or [])
     prompt_arg = '\nprompt_arg = "{prompt}"' if input_mode == "argv" else ""
     inline_result_bytes = min(262_144, max_output_bytes)
+    session_block = (
+        f"\n[agents.mock.session]\n{session_toml.strip()}\n" if session_toml.strip() else ""
+    )
     path.write_text(
         f"""\
 version = 1
@@ -102,6 +106,7 @@ args = []
 
 [agents.mock.env]
 pass = {passed}
+{session_block}
 """,
         encoding="utf-8",
     )

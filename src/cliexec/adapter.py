@@ -41,7 +41,14 @@ def _expand_many(template: tuple[str, ...], paths: Iterable[Path]) -> list[str]:
     return result
 
 
-def build_command(agent: AgentConfig, request: TaskRequest, *, run_id: str) -> SpawnSpec:
+def build_command(
+    agent: AgentConfig,
+    request: TaskRequest,
+    *,
+    run_id: str,
+    native_session_id: str | None = None,
+    resume: bool = False,
+) -> SpawnSpec:
     if not agent.supports(request.permission):
         raise CLIExecError(
             UNSUPPORTED_CAPABILITY,
@@ -59,7 +66,22 @@ def build_command(agent: AgentConfig, request: TaskRequest, *, run_id: str) -> S
 
     argv = list(agent.command)
     argv.extend(agent.modes[request.permission])
+    assert request.cwd is not None
     argv.extend(_expand(agent.input.cwd_args, "cwd", str(request.cwd)))
+    if resume:
+        if agent.session is None or native_session_id is None:
+            raise CLIExecError(
+                UNSUPPORTED_CAPABILITY,
+                f"agent {agent.name} cannot resume this session",
+            )
+        argv.extend(_expand(agent.session.resume_args, "session_id", native_session_id))
+    elif agent.session is not None:
+        if agent.session.id_strategy == "generated":
+            if native_session_id is None:
+                raise CLIExecError(PROTOCOL_ERROR, "generated session ID is missing")
+            argv.extend(_expand(agent.session.new_args, "session_id", native_session_id))
+        else:
+            argv.extend(agent.session.new_args)
     argv.extend(_expand_many(agent.input.file_args, request.files))
     argv.extend(_expand_many(agent.input.image_args, request.images))
     stdin_text: str | None = request.prompt
@@ -127,6 +149,25 @@ def _select_json_values(values: Iterable[object], agent: AgentConfig) -> list[st
     return [value for value in selected if value]
 
 
+def _read_json_values(path: Path, output_format: str) -> list[object]:
+    if output_format == "json":
+        with path.open("r", encoding="utf-8") as handle:
+            return [json.load(handle)]
+
+    values: list[object] = []
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        for number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                values.append(json.loads(line))
+            except json.JSONDecodeError as exc:
+                raise CLIExecError(
+                    PROTOCOL_ERROR, f"invalid JSONL at line {number}: {exc.msg}"
+                ) from exc
+    return values
+
+
 def _collect(values: list[str], mode: str) -> str:
     if not values:
         raise CLIExecError(PROTOCOL_ERROR, "no final result matched the output contract")
@@ -144,27 +185,41 @@ def parse_output(path: Path, agent: AgentConfig) -> str:
             if not text:
                 raise CLIExecError(PROTOCOL_ERROR, "agent returned an empty result")
             return text
-        if agent.output.format == "json":
-            with path.open("r", encoding="utf-8") as handle:
-                value = json.load(handle)
-            return _collect(_select_json_values([value], agent), agent.output.collect)
-
-        values: list[object] = []
-        with path.open("r", encoding="utf-8", errors="replace") as handle:
-            for number, line in enumerate(handle, start=1):
-                if not line.strip():
-                    continue
-                try:
-                    values.append(json.loads(line))
-                except json.JSONDecodeError as exc:
-                    raise CLIExecError(
-                        PROTOCOL_ERROR, f"invalid JSONL at line {number}: {exc.msg}"
-                    ) from exc
+        values = _read_json_values(path, agent.output.format)
         return _collect(_select_json_values(values, agent), agent.output.collect)
     except CLIExecError:
         raise
     except (OSError, json.JSONDecodeError) as exc:
         raise CLIExecError(PROTOCOL_ERROR, f"cannot parse agent output: {exc}") from exc
+
+
+def parse_session_id(path: Path, agent: AgentConfig) -> str:
+    session = agent.session
+    if session is None or session.id_strategy != "output" or session.id_field is None:
+        raise CLIExecError(PROTOCOL_ERROR, f"agent {agent.name} has no output session selector")
+    try:
+        values = _read_json_values(path, agent.output.format)
+        selected: list[str] = []
+        for value in values:
+            if not _matches(value, session.id_match):
+                continue
+            try:
+                candidate = _lookup(value, session.id_field)
+            except KeyError:
+                continue
+            if not isinstance(candidate, str) or not candidate.strip():
+                raise CLIExecError(PROTOCOL_ERROR, "session ID must be a non-empty string")
+            selected.append(candidate.strip())
+        if not selected:
+            raise CLIExecError(PROTOCOL_ERROR, "no session ID matched the output contract")
+        distinct = set(selected)
+        if len(distinct) != 1:
+            raise CLIExecError(PROTOCOL_ERROR, "worker emitted conflicting session IDs")
+        return selected[0]
+    except CLIExecError:
+        raise
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CLIExecError(PROTOCOL_ERROR, f"cannot parse agent session ID: {exc}") from exc
 
 
 def best_effort_partial(path: Path, agent: AgentConfig, limit: int = 64 * 1024) -> str | None:

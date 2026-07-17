@@ -11,6 +11,11 @@ prompt_arg = "--single={prompt}"
 format = "text"
 collect = "last"
 
+[session]
+id_strategy = "generated"
+new_args = ["--session-id", "{session_id}"]
+resume_args = ["--resume", "{session_id}"]
+
 [modes.read_only]
 args = ["--permission-mode", "plan"]
 
@@ -34,4 +39,6 @@ help_contains = [
   "--permission-mode",
   "--no-memory",
   "--no-subagents",
+  "--resume",
+  "--session-id",
 ]

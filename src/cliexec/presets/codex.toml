@@ -2,7 +2,6 @@ enabled = true
 command = [
   "codex",
   "exec",
-  "--ephemeral",
   "--skip-git-repo-check",
   "--color",
   "never",
@@ -22,6 +21,12 @@ format = "jsonl"
 match = { type = "item.completed", "item.type" = "agent_message" }
 field = "item.text"
 collect = "last"
+
+[session]
+id_strategy = "output"
+resume_args = ["resume", "{session_id}"]
+id_match = { type = "thread.started" }
+id_field = "thread_id"
 
 [modes.read_only]
 args = ["--sandbox", "read-only"]
@@ -43,7 +48,7 @@ help_args = ["exec", "--help"]
 help_contains = [
   "--json",
   "--sandbox",
-  "--ephemeral",
+  "resume",
   "--image",
   "--skip-git-repo-check",
 ]

@@ -1,16 +1,16 @@
 ---
 name: cliexec
-description: Delegate a self-contained, one-shot task from the current agent to another installed Agent CLI through CLIExec and collect its final result. Use when a user asks Claude Code or Codex to have Claude Code, Codex CLI, Antigravity CLI, OpenCode, Grok Build, or another configured CLI review, analyze, or perform a bounded task. Use a blocking run for short work and a background task for longer work.
+description: Delegate a bounded task turn from the current agent to another installed Agent CLI through CLIExec, optionally continue that worker's exact prior session, and collect its final result. Use when a user asks Claude Code or Codex to have Claude Code, Codex CLI, Antigravity CLI, OpenCode, Grok Build, or another configured CLI review, analyze, or perform a bounded task. Use a blocking run for short work and a background task for longer work.
 ---
 
 # CLIExec
 
-Delegate bounded, one-shot tasks to another Agent CLI. Keep orchestration, verification, and final judgment in the current agent.
+Delegate bounded task turns to another Agent CLI. Keep orchestration, verification, and final judgment in the current agent.
 
 ## Prepare a delegation
 
 1. Use `cliexec agents` if the requested worker or its capabilities are unknown.
-2. Write a self-contained prompt with the goal, relevant context, working directory, constraints, and success criteria. The worker cannot see the current conversation.
+2. Write a self-contained prompt with the goal, relevant context, working directory, constraints, and success criteria. A new worker session cannot see the controller conversation. A continued run sees only its own prior worker session.
 3. Choose the least privilege required:
    - `read_only` for review, explanation, and analysis.
    - `workspace_write` only when the worker must modify files.
@@ -26,12 +26,13 @@ The `run` and `start` commands share these task options:
 | Option | Meaning |
 | --- | --- |
 | `AGENT` | Configured agent name, such as `codex`, `claude`, `agy`, `opencode`, or `grok`. |
-| `--cwd PATH` | Working directory visible to the worker; defaults to the current directory. |
+| `--cwd PATH` | Working directory visible to the worker; defaults to the current directory, or inherits the continued run's directory. |
 | `--permission MODE` | `read_only`, `workspace_write`, or `unrestricted`; defaults to `read_only`. |
 | `--timeout DURATION` | Task deadline such as `30s`, `45m`, or `2h`. |
 | `--prompt-file PATH` | Read the prompt from a file instead of stdin. |
 | `--file PATH` | Attach a file; repeatable and available only when the adapter supports files. |
 | `--image PATH` | Attach an image; repeatable and available only when the adapter supports images. |
+| `--continue RUN_ID` | Continue the exact session represented by the latest terminal run. |
 | `--config PATH` | Intentionally load an explicit TOML config in addition to the user config. |
 | `--format json\|text` | JSON is the stable integration format; text is for interactive reading. |
 
@@ -75,6 +76,23 @@ Useful lifecycle commands:
 
 Cancel work that is obsolete or no longer needed.
 
+## Continue a worker session
+
+Check `cliexec agents` for `capabilities.sessions`. Supported adapters persist native sessions by default. Continue only from the latest terminal tip:
+
+```bash
+cliexec run codex --continue RUN_ID --permission read_only <<'CLIEXEC_PROMPT'
+Revisit the previous answer and verify the suspected race against the current code.
+Do not call CLIExec or delegate to another agent.
+CLIEXEC_PROMPT
+```
+
+The continued call creates a new `run_id`; save that new ID for another turn. The agent and resolved cwd must match the parent. Permission defaults to `read_only` again, and files/images are not inherited. Do not retry from an older parent after a child has started: linear conversations reject branching with `CONVERSATION_CONFLICT`.
+
+Failed, timed-out, and cancelled tips may remain resumable when `data.resumable` is true. Rejected runs and runs without a captured session ID are not resumable. Antigravity CLI currently reports `sessions: false` because its headless output lacks a documented machine-readable conversation ID.
+
+CLIExec has no uniform ephemeral flag. Native session storage and retention remain under each worker's control.
+
 ## Understand the result contract
 
 Machine-facing commands write exactly one versioned JSON envelope to stdout:
@@ -85,6 +103,9 @@ Machine-facing commands write exactly one versioned JSON envelope to stdout:
   "ok": true,
   "data": {
     "run_id": "...",
+    "conversation_id": "...",
+    "parent_run_id": null,
+    "resumable": true,
     "agent": "codex",
     "state": "completed",
     "succeeded": true,
@@ -134,3 +155,4 @@ Do not run `doctor --smoke`, `purge --all`, or `skill install --force` unless th
 - Do not recursively invoke CLIExec from a delegated worker; nested delegation is rejected.
 - Report failed, timed-out, cancelled, and rejected tasks accurately.
 - Preserve useful partial output for diagnosis, but do not call the task successful.
+- Remember that `cliexec purge` removes CLIExec run records, not worker-native sessions.

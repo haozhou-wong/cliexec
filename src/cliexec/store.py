@@ -23,6 +23,12 @@ ACTIVE_STATES = {
     TaskState.RUNNING.value,
 }
 
+_INTERNAL_STATE_FIELDS = {
+    "native_session_id",
+    "session_claimed",
+    "continued_by_run_id",
+}
+
 
 class RunStore:
     def __init__(self, root: Path | None = None) -> None:
@@ -109,6 +115,9 @@ class RunStore:
         agent: dict[str, Any],
         policy: dict[str, Any],
         config_snapshot: str,
+        conversation_id: str | None = None,
+        parent_run_id: str | None = None,
+        native_session_id: str | None = None,
     ) -> str:
         run_id = str(uuid.uuid4())
         directory = self.runs_dir / run_id
@@ -134,6 +143,11 @@ class RunStore:
             "schema_version": SCHEMA_VERSION,
             "run_id": run_id,
             "agent": request["agent"],
+            "conversation_id": conversation_id,
+            "parent_run_id": parent_run_id,
+            "native_session_id": native_session_id,
+            "session_claimed": False,
+            "continued_by_run_id": None,
             "state": TaskState.SUBMITTED.value,
             "permission": {
                 "requested": request["permission"],
@@ -217,6 +231,43 @@ class RunStore:
         states.sort(key=lambda item: item.get("created_at", ""), reverse=True)
         return states
 
+    @staticmethod
+    def public_state(state: dict[str, Any]) -> dict[str, Any]:
+        value = dict(state)
+        value.setdefault("conversation_id", None)
+        value.setdefault("parent_run_id", None)
+        task_state = TaskState(value["state"])
+        value["resumable"] = bool(
+            value.get("conversation_id")
+            and value.get("native_session_id")
+            and value.get("session_claimed")
+            and task_state.terminal
+            and task_state is not TaskState.REJECTED
+            and not value.get("continued_by_run_id")
+        )
+        for field in _INTERNAL_STATE_FIELDS:
+            value.pop(field, None)
+        return value
+
+    def release_unclaimed_continuation(self, run_id: str, *, registry_locked: bool = False) -> None:
+        def release() -> None:
+            child = self.load_state(run_id)
+            parent_run_id = child.get("parent_run_id")
+            if not isinstance(parent_run_id, str) or child.get("session_claimed"):
+                return
+            try:
+                parent = self.load_state(parent_run_id)
+            except CLIExecError:
+                return
+            if parent.get("continued_by_run_id") == run_id:
+                self.update_state(parent_run_id, continued_by_run_id=None)
+
+        if registry_locked:
+            release()
+            return
+        with self.registry_lock():
+            release()
+
     def save_result(self, run_id: str, text: str, metadata: dict[str, Any]) -> None:
         paths = self.paths(run_id)
         self._atomic_bytes(paths["result"], text.encode("utf-8"))
@@ -252,7 +303,7 @@ class RunStore:
         text, truncated = self._inline(paths["result"], inline_limit)
         completed = task_state is TaskState.COMPLETED
         result = {
-            **state,
+            **self.public_state(state),
             "succeeded": completed,
             "duration_ms": _duration_ms(state.get("started_at"), state.get("finished_at")),
             "final_text": text if completed else None,

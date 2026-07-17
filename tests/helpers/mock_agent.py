@@ -36,6 +36,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--pid-file", type=Path)
     parser.add_argument("--child-pid-file", type=Path)
     parser.add_argument("--env-name", action="append", default=[])
+    parser.add_argument("--session-id")
+    parser.add_argument("--resume")
+    parser.add_argument("--session-root", type=Path)
+    parser.add_argument("--output-session", action="store_true")
     parser.add_argument("prompt", nargs="?")
     return parser
 
@@ -52,10 +56,30 @@ def _write_pid(path: Path | None, pid: int) -> None:
     path.write_text(str(pid), encoding="utf-8")
 
 
+def _session_prompt(args: argparse.Namespace, prompt: str) -> tuple[str | None, str]:
+    session_id = args.resume or args.session_id
+    if args.output_session and session_id is None:
+        session_id = f"session-{os.environ['CLIEXEC_RUN_ID']}"
+    if session_id is None or args.session_root is None:
+        return session_id, prompt
+    args.session_root.mkdir(parents=True, exist_ok=True)
+    path = args.session_root / f"{session_id}.json"
+    history: list[str] = []
+    if args.resume and path.exists():
+        history = json.loads(path.read_text(encoding="utf-8"))
+    history.append(prompt)
+    path.write_text(json.dumps(history), encoding="utf-8")
+    return session_id, "|".join(history)
+
+
 def main() -> int:
     args = _parser().parse_args()
     _write_pid(args.pid_file, os.getpid())
     prompt = _prompt(args.prompt)
+    session_id, prompt = _session_prompt(args, prompt)
+
+    if args.output_session:
+        print(json.dumps({"type": "session", "session_id": session_id}), flush=True)
 
     if args.mode == "text":
         print(f"final:{prompt}", flush=True)

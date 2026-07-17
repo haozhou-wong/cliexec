@@ -2,6 +2,7 @@ from cliexec.config import load_config
 from cliexec.preset_loader import load_builtin_presets
 
 EXPECTED_PRESETS = {"agy", "claude", "codex", "grok", "opencode"}
+SESSION_PRESETS = {"claude", "codex", "grok", "opencode"}
 
 
 def test_loads_all_builtin_presets() -> None:
@@ -34,6 +35,13 @@ def test_presets_follow_the_declarative_adapter_contract() -> None:
         output_config = preset["output"]
         assert output_config["format"] in {"text", "json", "jsonl"}, name
         assert output_config["collect"] in {"first", "last", "concat"}, name
+
+        if name in SESSION_PRESETS:
+            session = preset["session"]
+            assert session["id_strategy"] in {"generated", "output"}, name
+            assert any("{session_id}" in arg for arg in session["resume_args"]), name
+        else:
+            assert "session" not in preset, name
 
         assert set(preset["modes"]) == {"read_only", "workspace_write", "unrestricted"}, name
         assert all(isinstance(value["args"], list) for value in preset["modes"].values()), name
@@ -68,6 +76,12 @@ def test_known_headless_contracts_are_encoded() -> None:
     assert presets["opencode"]["output"]["match"] == {"type": "text"}
     assert presets["opencode"]["output"]["field"] == "part.text"
     assert presets["grok"]["input"]["prompt_arg"] == "--single={prompt}"
+    assert presets["codex"]["session"]["id_field"] == "thread_id"
+    assert presets["opencode"]["session"]["id_field"] == "sessionID"
+    assert presets["claude"]["session"]["id_strategy"] == "generated"
+    assert presets["grok"]["session"]["id_strategy"] == "generated"
+    assert "--ephemeral" not in presets["codex"]["command"]
+    assert "--no-session-persistence" not in presets["claude"]["command"]
     assert "CLAUDE_CONFIG_DIR" in presets["claude"]["env"]["pass"]
     assert "CLAUDE_CODE_OAUTH_TOKEN" in presets["claude"]["env"]["pass"]
     assert "GROK_HOME" in presets["grok"]["env"]["pass"]

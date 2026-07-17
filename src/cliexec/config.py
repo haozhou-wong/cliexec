@@ -45,6 +45,15 @@ class OutputConfig:
 
 
 @dataclass(slots=True)
+class SessionConfig:
+    id_strategy: str
+    new_args: tuple[str, ...] = ()
+    resume_args: tuple[str, ...] = ()
+    id_match: dict[str, object] = field(default_factory=dict)
+    id_field: str | None = None
+
+
+@dataclass(slots=True)
 class ProbeConfig:
     version_args: tuple[str, ...] = ("--version",)
     version_regex: str | None = None
@@ -62,6 +71,7 @@ class AgentConfig:
     allow_unrestricted: bool = False
     input: InputConfig = field(default_factory=InputConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
+    session: SessionConfig | None = None
     modes: dict[Permission, tuple[str, ...]] = field(default_factory=dict)
     env_pass: tuple[str, ...] = ()
     probe: ProbeConfig = field(default_factory=ProbeConfig)
@@ -77,10 +87,11 @@ class AgentConfig:
             "images": bool(self.input.image_args),
             "input_mode": self.input.mode,
             "output_format": self.output.format,
+            "sessions": self.session is not None,
         }
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        value: dict[str, Any] = {
             "name": self.name,
             "command": list(self.command),
             "enabled": self.enabled,
@@ -110,6 +121,15 @@ class AgentConfig:
             },
             "builtin": self.builtin,
         }
+        if self.session is not None:
+            value["session"] = {
+                "id_strategy": self.session.id_strategy,
+                "new_args": list(self.session.new_args),
+                "resume_args": list(self.session.resume_args),
+                "id_match": self.session.id_match,
+                "id_field": self.session.id_field,
+            }
+        return value
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> AgentConfig:
@@ -206,6 +226,7 @@ def _parse_agent(name: str, value: dict[str, Any]) -> AgentConfig:
             "allow_unrestricted",
             "input",
             "output",
+            "session",
             "modes",
             "env",
             "probe",
@@ -269,6 +290,70 @@ def _parse_agent(name: str, value: dict[str, Any]) -> AgentConfig:
     if output_config.format != "text" and not output_config.field:
         raise CLIExecError(CONFIG_ERROR, f"agents.{name}.output.field is required for JSON output")
 
+    session: SessionConfig | None = None
+    session_raw = value.get("session")
+    if session_raw is not None:
+        if not isinstance(session_raw, dict):
+            raise CLIExecError(CONFIG_ERROR, f"agents.{name}.session must be a table")
+        _unknown_keys(
+            session_raw,
+            {"id_strategy", "new_args", "resume_args", "id_match", "id_field"},
+            f"agents.{name}.session",
+        )
+        strategy = str(session_raw.get("id_strategy", ""))
+        if strategy not in {"generated", "output"}:
+            raise CLIExecError(
+                CONFIG_ERROR,
+                f"agents.{name}.session.id_strategy must be generated or output",
+            )
+        new_args = _string_tuple(session_raw.get("new_args", []), f"agents.{name}.session.new_args")
+        resume_args = _string_tuple(
+            session_raw.get("resume_args", []), f"agents.{name}.session.resume_args"
+        )
+        if not resume_args or not any("{session_id}" in item for item in resume_args):
+            raise CLIExecError(
+                CONFIG_ERROR,
+                f"agents.{name}.session.resume_args must contain {{session_id}}",
+            )
+        id_match = session_raw.get("id_match", {})
+        if not isinstance(id_match, dict):
+            raise CLIExecError(CONFIG_ERROR, f"agents.{name}.session.id_match must be a table")
+        id_field = str(session_raw["id_field"]) if session_raw.get("id_field") is not None else None
+        if strategy == "generated":
+            if not new_args or not any("{session_id}" in item for item in new_args):
+                raise CLIExecError(
+                    CONFIG_ERROR,
+                    f"agents.{name}.session.new_args must contain {{session_id}}",
+                )
+            if id_match or id_field is not None:
+                raise CLIExecError(
+                    CONFIG_ERROR,
+                    f"agents.{name}.session generated strategy cannot select an output ID",
+                )
+        else:
+            if any("{session_id}" in item for item in new_args):
+                raise CLIExecError(
+                    CONFIG_ERROR,
+                    f"agents.{name}.session output strategy cannot preselect a session ID",
+                )
+            if output_config.format == "text":
+                raise CLIExecError(
+                    CONFIG_ERROR,
+                    f"agents.{name}.session output strategy requires JSON or JSONL output",
+                )
+            if not id_field:
+                raise CLIExecError(
+                    CONFIG_ERROR,
+                    f"agents.{name}.session.id_field is required for output strategy",
+                )
+        session = SessionConfig(
+            id_strategy=strategy,
+            new_args=new_args,
+            resume_args=resume_args,
+            id_match=copy.deepcopy(id_match),
+            id_field=id_field,
+        )
+
     modes_raw = value.get("modes", {})
     if not isinstance(modes_raw, dict):
         raise CLIExecError(CONFIG_ERROR, f"agents.{name}.modes must be a table")
@@ -331,6 +416,7 @@ def _parse_agent(name: str, value: dict[str, Any]) -> AgentConfig:
         ),
         input=input_config,
         output=output_config,
+        session=session,
         modes=modes,
         env_pass=_string_tuple(env_raw.get("pass", []), f"agents.{name}.env.pass"),
         probe=probe,

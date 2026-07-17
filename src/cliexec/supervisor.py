@@ -9,7 +9,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import BinaryIO
 
-from .adapter import best_effort_partial, build_command, parse_output
+from .adapter import best_effort_partial, build_command, parse_output, parse_session_id
 from .config import AgentConfig
 from .errors import (
     CANCELLED,
@@ -133,6 +133,7 @@ def _finish_error(
         stderr_bytes=stderr_bytes,
         error={"code": code, "message": message},
     )
+    store.release_unclaimed_continuation(run_id)
 
 
 def supervise(run_id: str, root: Path) -> int:
@@ -158,7 +159,16 @@ def supervise(run_id: str, root: Path) -> int:
             supervisor_pid=os.getpid(),
             supervisor_start_ticks=proc_start_ticks(os.getpid()),
         )
-        spec = build_command(agent, request, run_id=run_id)
+        initial_state = store.load_state(run_id)
+        native_session_id = initial_state.get("native_session_id")
+        resume = initial_state.get("parent_run_id") is not None
+        spec = build_command(
+            agent,
+            request,
+            run_id=run_id,
+            native_session_id=(str(native_session_id) if native_session_id is not None else None),
+            resume=resume,
+        )
         paths = store.paths(run_id)
         for key in ("stdout", "stderr"):
             paths[key].touch(mode=0o600, exist_ok=True)
@@ -187,6 +197,9 @@ def supervise(run_id: str, root: Path) -> int:
                 return 1
             child_pgid = process.pid
             started_at = utc_now()
+            state_changes: dict[str, object] = {}
+            if agent.session is not None and (resume or agent.session.id_strategy == "generated"):
+                state_changes["session_claimed"] = True
             store.update_state(
                 run_id,
                 state=TaskState.RUNNING.value,
@@ -195,6 +208,7 @@ def supervise(run_id: str, root: Path) -> int:
                 child_pid=process.pid,
                 child_pgid=child_pgid,
                 child_start_ticks=proc_start_ticks(process.pid),
+                **state_changes,
             )
 
             capture = _OutputCapture(int(policy["max_output_bytes"]))
@@ -262,6 +276,38 @@ def supervise(run_id: str, root: Path) -> int:
         if reason is None and capture.limit_reached.is_set():
             reason = OUTPUT_LIMIT
 
+        session_error: CLIExecError | None = None
+        session_mismatch = False
+        if agent.session is not None and agent.session.id_strategy == "output":
+            try:
+                emitted_session_id = parse_session_id(paths["stdout"], agent)
+                if native_session_id is not None and emitted_session_id != native_session_id:
+                    session_mismatch = True
+                    raise CLIExecError(PROTOCOL_ERROR, "worker resumed a different session ID")
+                native_session_id = emitted_session_id
+                store.update_state(
+                    run_id,
+                    native_session_id=emitted_session_id,
+                    session_claimed=True,
+                )
+            except CLIExecError as exc:
+                session_error = exc
+
+        if session_mismatch:
+            store.update_state(run_id, session_claimed=False)
+            partial = best_effort_partial(paths["stdout"], agent)
+            _finish_error(
+                store,
+                run_id,
+                code=PROTOCOL_ERROR,
+                message="worker resumed a different session ID",
+                exit_code=exit_code,
+                stdout_bytes=stdout_bytes,
+                stderr_bytes=stderr_bytes,
+                partial=partial,
+            )
+            return 1
+
         if reason is not None:
             partial = best_effort_partial(paths["stdout"], agent)
             state = {
@@ -294,6 +340,20 @@ def supervise(run_id: str, root: Path) -> int:
                 run_id,
                 code=NONZERO_EXIT,
                 message=f"agent exited with code {exit_code}",
+                exit_code=exit_code,
+                stdout_bytes=stdout_bytes,
+                stderr_bytes=stderr_bytes,
+                partial=partial,
+            )
+            return 1
+
+        if session_error is not None:
+            partial = best_effort_partial(paths["stdout"], agent)
+            _finish_error(
+                store,
+                run_id,
+                code=PROTOCOL_ERROR,
+                message=session_error.message,
                 exit_code=exit_code,
                 stdout_bytes=stdout_bytes,
                 stderr_bytes=stderr_bytes,

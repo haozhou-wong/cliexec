@@ -14,6 +14,11 @@ match = { type = "text" }
 field = "part.text"
 collect = "last"
 
+[session]
+id_strategy = "output"
+resume_args = ["--session", "{session_id}"]
+id_field = "sessionID"
+
 [modes.read_only]
 args = ["--agent", "plan"]
 
@@ -41,4 +46,4 @@ version_args = ["--version"]
 version_regex = '(?P<version>\d+\.\d+\.\d+)'
 tested_versions = ">=1.18.2,<1.19.0"
 help_args = ["run", "--help"]
-help_contains = ["--pure", "--format", "--file", "--agent", "--auto"]
+help_contains = ["--pure", "--format", "--file", "--agent", "--auto", "--session"]

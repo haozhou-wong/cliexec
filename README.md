@@ -1,6 +1,6 @@
 <h1 align="center">CLIExec</h1>
 
-<p align="center"><strong>Delegate one-shot work between Agent CLIs through one local interface.</strong></p>
+<p align="center"><strong>Delegate bounded work between Agent CLIs through one local interface.</strong></p>
 
 <p align="center">
   <img alt="Status: Alpha" src="https://img.shields.io/badge/status-alpha-orange">
@@ -33,6 +33,7 @@ sequenceDiagram
 
 - Normalizes text, JSON, and JSONL worker output into one versioned result.
 - Runs short tasks in the foreground or supervises longer tasks in the background.
+- Continues supported worker sessions by exact ID while keeping every invocation as a separate run.
 - Applies permission policy, timeouts, output limits, cancellation, and process-group cleanup.
 - Keeps prompt transport, output parsing, permission flags, and environment access in per-worker adapters.
 
@@ -42,17 +43,19 @@ CLIExec runs locally and does not require a daemon or hosted control plane. Work
 
 Built-in presets are included for these workers:
 
-| Worker | Prompt transport | Explicit local file | Explicit local image |
-| --- | --- | :---: | :---: |
-| Claude Code | stdin | No | No |
-| Codex CLI | stdin | No | Yes |
-| Antigravity CLI | argv | No | No |
-| OpenCode | stdin | Yes | Yes |
-| Grok Build | argv | No | No |
+| Worker | Prompt transport | Explicit local file | Explicit local image | Session continuation |
+| --- | --- | :---: | :---: | :---: |
+| Claude Code | stdin | No | No | Yes |
+| Codex CLI | stdin | No | Yes | Yes |
+| Antigravity CLI | argv | No | No | No |
+| OpenCode | stdin | Yes | Yes | Yes |
+| Grok Build | argv | No | No | Yes |
 
-The last two columns describe explicit attachment paths mapped by the built-in adapter. They do not describe workspace access. A worker can still inspect files under its working directory with its native tools, subject to the selected permission mode.
+The file and image columns describe explicit attachment paths mapped by the built-in adapter. They do not describe workspace access. A worker can still inspect files under its working directory with its native tools, subject to the selected permission mode.
 
 Claude Code's current `--file` option expects an existing API file ID in `file_id:relative_path` form, and its preset has no compatible local image-path flag. Grok Build's `--prompt-json` expects structured content blocks rather than a local path. Supporting these forms requires an upload or structured-input transport, which the current version does not implement.
+
+Antigravity CLI can resume a known conversation, but its headless output does not currently expose a documented machine-readable conversation ID. CLIExec therefore does not claim session support for the `agy` preset and never falls back to a race-prone "most recent session" flag.
 
 ## Install
 
@@ -75,6 +78,27 @@ cliexec skill install --target all
 ```
 
 The Skill is optional for direct terminal use. It contains the controller workflow, task commands, result contract, exit codes, and failure-handling rules. See [the packaged CLIExec Skill](skills/cliexec/SKILL.md) or run `cliexec --help` when using the CLI manually.
+
+## Continue a worker conversation
+
+Supported presets persist a native worker session by default. Continue the latest terminal run explicitly:
+
+```bash
+cliexec run codex --cwd "$PWD" <<'EOF'
+Review the current implementation.
+EOF
+
+# Read RUN_ID from data.run_id in the JSON response.
+cliexec run codex --continue RUN_ID <<'EOF'
+Now focus on the concurrency issue you identified.
+EOF
+```
+
+Every turn receives a new `run_id`. Runs in the same linear conversation share a CLIExec `conversation_id`, and `parent_run_id` records the direct predecessor. Only the latest terminal tip can be continued; attempting to branch from an older run returns `CONVERSATION_CONFLICT`. The agent and resolved working directory cannot change. Permission, timeout, files, and images are evaluated independently for each turn, so permission defaults back to `read_only` and attachments are not repeated automatically.
+
+Failed, timed-out, and cancelled tips remain resumable when CLIExec captured a reliable native session ID. Rejected runs and runs without an ID are not resumable. CLIExec does not expose native IDs as normalized fields; raw worker logs may still contain them. Use `--continue RUN_ID`, not a provider-specific session ID.
+
+CLIExec does not provide a cross-worker ephemeral switch. Native session storage and retention are controlled by each worker.
 
 ## Configure CLIExec
 
@@ -214,6 +238,19 @@ field = "result.text"
 # all trimmed stdout and ignores these selectors.
 collect = "last"
 
+# Optional exact session continuation. Without this table, sessions = false.
+[agents.reviewer.session]
+# "output" extracts an ID from JSON/JSONL using id_match and id_field.
+id_strategy = "output"
+resume_args = ["--resume", "{session_id}"]
+id_match = { type = "session.started" }
+id_field = "session.id"
+
+# A worker that accepts a caller-selected ID can instead use:
+# id_strategy = "generated"
+# new_args = ["--session-id", "{session_id}"]
+# resume_args = ["--resume", "{session_id}"]
+
 # A mode table declares support for that permission; an absent table is unsupported.
 # args is a string array and may be empty.
 [agents.reviewer.modes.read_only]
@@ -260,7 +297,7 @@ help_contains = ["--sandbox", "--file"]
 
 Add the adapter to the user configuration shown above. Validation and task commands are documented in the packaged Skill.
 
-CLIExec executes `command` directly without a shell. The current version does not load custom parser scripts. If a target requires an upload handshake, a persistent session, TUI keystrokes, or a custom wire protocol, TOML alone is not enough for that CLI. `builtin` is internal metadata and should not be set in user configuration.
+CLIExec executes `command` directly without a shell. The current version does not load custom parser scripts. Session adapters must either preassign an exact ID or extract one from JSON/JSONL; plain-text regexes and "resume latest" fallbacks are intentionally unsupported. If a target requires an upload handshake, a persistent daemon, TUI keystrokes, or a custom wire protocol, TOML alone is not enough for that CLI. `builtin` is internal metadata and should not be set in user configuration.
 
 ## Security model
 
@@ -270,14 +307,14 @@ CLIExec executes `command` directly without a shell. The current version does no
 | Concurrent writes | Write-capable tasks with overlapping resolved working directories cannot run at the same time. | This does not isolate CLIExec from unrelated local processes. |
 | Process lifecycle | Timeout, cancellation, or output overflow terminates the worker process group. | Files changed before termination are not rolled back. |
 | Environment | A child receives a fixed basic environment plus variables allowed by its adapter. `CLIEXEC_DEPTH` blocks accidental nested delegation. | The recursion check is a guard, not a security boundary. Pass only variables the worker needs. |
-| Stored data | Run directories use mode `0700` and files use `0600`. Plaintext records are kept under `${XDG_STATE_HOME:-~/.local/state}/cliexec` for 30 days by default. | Records are not encrypted at rest. The same OS user and root can read them. |
+| Stored data | Run directories use mode `0700` and files use `0600`. Plaintext records are kept under `${XDG_STATE_HOME:-~/.local/state}/cliexec` for 30 days by default. | Records are not encrypted at rest. The same OS user and root can read them. Worker-native sessions are stored and retained by each worker; `cliexec purge` removes only CLIExec records. |
 | Prompt exposure | stdin keeps prompts out of the controller argv. Antigravity CLI and Grok Build presets use argv transport. | Their prompts can be visible to local process inspection. Avoid secrets. |
 | Provider traffic | CLIExec's control plane is local. | A worker may send prompts, files, images, or workspace content to its configured cloud service. |
 | Worker results | Results are marked as untrusted data. | The controller should verify important findings and file changes before relying on them. |
 
 ## Scope
 
-The current version handles local, one-shot execution. It does not manage multi-step workflows, long-lived conversations, isolated worktrees, automatic merging, or remote workers. A Web UI and protocol endpoints such as MCP, ACP, or A2A are also outside the current scope.
+The current version handles local tasks and exact, linear continuation of supported worker sessions. It does not provide conversation branching, naming, export, native-session deletion, multi-step workflow management, isolated worktrees, automatic merging, or remote workers. A Web UI and protocol endpoints such as MCP, ACP, or A2A are also outside the current scope.
 
 ## License
 

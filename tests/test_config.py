@@ -108,3 +108,85 @@ def test_input_argument_templates_require_path_placeholder(tmp_path: Path, monke
 
     assert raised.value.code == CONFIG_ERROR
     assert "{path}" in raised.value.message
+
+
+def test_generated_session_contract_loads(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "user-config"))
+    config_path = write_mock_config(tmp_path / "config.toml")
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        + """
+[agents.mock.session]
+id_strategy = "generated"
+new_args = ["--session-id", "{session_id}"]
+resume_args = ["--resume", "{session_id}"]
+""",
+        encoding="utf-8",
+    )
+
+    agent = load_config(config_path).agent("mock")
+
+    assert agent.session is not None
+    assert agent.session.id_strategy == "generated"
+    assert agent.session.new_args == ("--session-id", "{session_id}")
+    assert agent.capabilities()["sessions"] is True
+
+
+def test_output_session_contract_loads(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "user-config"))
+    config_path = write_mock_config(
+        tmp_path / "config.toml",
+        mode="jsonl",
+        output_format="jsonl",
+        output_extra='match = { type = "result" }\nfield = "result.text"',
+    )
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        + """
+[agents.mock.session]
+id_strategy = "output"
+resume_args = ["--resume", "{session_id}"]
+id_match = { type = "session" }
+id_field = "session.id"
+""",
+        encoding="utf-8",
+    )
+
+    session = load_config(config_path).agent("mock").session
+
+    assert session is not None
+    assert session.id_match == {"type": "session"}
+    assert session.id_field == "session.id"
+
+
+@pytest.mark.parametrize(
+    "session_toml",
+    [
+        'id_strategy = "generated"\nresume_args = ["--resume", "{session_id}"]',
+        'id_strategy = "output"\nresume_args = ["--resume", "{session_id}"]',
+        'id_strategy = "output"\nresume_args = ["--resume"]\nid_field = "session_id"',
+        (
+            'id_strategy = "output"\nnew_args = ["--id", "{session_id}"]\n'
+            'resume_args = ["--resume", "{session_id}"]\nid_field = "session_id"'
+        ),
+    ],
+)
+def test_invalid_session_contract_is_rejected(
+    tmp_path: Path, monkeypatch, session_toml: str
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "user-config"))
+    config_path = write_mock_config(
+        tmp_path / "config.toml",
+        mode="jsonl",
+        output_format="jsonl",
+        output_extra='match = { type = "result" }\nfield = "result.text"',
+    )
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8") + f"\n[agents.mock.session]\n{session_toml}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CLIExecError) as raised:
+        load_config(config_path)
+
+    assert raised.value.code == CONFIG_ERROR

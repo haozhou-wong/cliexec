@@ -88,3 +88,60 @@ def test_failed_result_is_exposed_as_partial_text(tmp_path: Path) -> None:
     assert result["final_text"] is None
     assert result["partial_text"] == "partial"
     assert result["error"]["code"] == "NONZERO_EXIT"
+
+
+def test_public_state_exposes_lineage_but_hides_native_session(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "state")
+    run_id = store.create_run(
+        request={
+            "agent": "mock",
+            "prompt": "prompt",
+            "cwd": str(store.root),
+            "permission": "read_only",
+            "timeout_seconds": 30,
+            "files": [],
+            "images": [],
+        },
+        agent={"name": "mock"},
+        policy={"inline_result_bytes": 1024},
+        config_snapshot="version = 1\n",
+        conversation_id="conversation-1",
+        parent_run_id="parent-1",
+        native_session_id="native-secret",
+    )
+    store.update_state(
+        run_id,
+        state=TaskState.FAILED.value,
+        session_claimed=True,
+        finished_at="2026-01-01T00:00:00Z",
+    )
+
+    public = store.public_state(store.load_state(run_id))
+
+    assert public["conversation_id"] == "conversation-1"
+    assert public["parent_run_id"] == "parent-1"
+    assert public["resumable"] is True
+    assert "native_session_id" not in public
+    assert "session_claimed" not in public
+    assert "continued_by_run_id" not in public
+
+
+def test_legacy_state_defaults_to_not_resumable(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "state")
+    run_id = _create_run(store)
+    state = store.load_state(run_id)
+    for field in (
+        "conversation_id",
+        "parent_run_id",
+        "native_session_id",
+        "session_claimed",
+        "continued_by_run_id",
+    ):
+        state.pop(field)
+    store._atomic_json(store.paths(run_id)["state"], state)
+
+    public = store.public_state(store.load_state(run_id))
+
+    assert public["conversation_id"] is None
+    assert public["parent_run_id"] is None
+    assert public["resumable"] is False

@@ -47,21 +47,23 @@ class TaskState(StrEnum):
 class TaskRequest:
     agent: str
     prompt: str
-    cwd: Path
+    cwd: Path | None
     permission: Permission = Permission.READ_ONLY
     timeout_seconds: float = 1800.0
     files: list[Path] = field(default_factory=list)
     images: list[Path] = field(default_factory=list)
+    continue_run_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "agent": self.agent,
             "prompt": self.prompt,
-            "cwd": str(self.cwd),
+            "cwd": str(self.cwd) if self.cwd is not None else None,
             "permission": self.permission.value,
             "timeout_seconds": self.timeout_seconds,
             "files": [str(path) for path in self.files],
             "images": [str(path) for path in self.images],
+            "continue_run_id": self.continue_run_id,
         }
 
     @classmethod
@@ -69,11 +71,14 @@ class TaskRequest:
         return cls(
             agent=str(value["agent"]),
             prompt=str(value["prompt"]),
-            cwd=Path(value["cwd"]),
+            cwd=Path(value["cwd"]) if value.get("cwd") is not None else None,
             permission=Permission(value["permission"]),
             timeout_seconds=float(value["timeout_seconds"]),
             files=[Path(path) for path in value.get("files", [])],
             images=[Path(path) for path in value.get("images", [])],
+            continue_run_id=(
+                str(value["continue_run_id"]) if value.get("continue_run_id") is not None else None
+            ),
         )
 
 

@@ -96,6 +96,12 @@ def _common_options(function: F) -> F:
 
 def _task_options(function: F) -> F:
     function = click.option(
+        "--continue",
+        "continue_run_id",
+        metavar="RUN_ID",
+        help="Continue the exact session represented by the latest run ID.",
+    )(function)
+    function = click.option(
         "--image",
         "images",
         multiple=True,
@@ -124,8 +130,8 @@ def _task_options(function: F) -> F:
     function = click.option(
         "--cwd",
         type=click.Path(path_type=Path, file_okay=False),
-        default=".",
-        show_default=True,
+        default=None,
+        help="Working directory; defaults to the current or continued run directory.",
     )(function)
     return _common_options(function)
 
@@ -155,12 +161,13 @@ def _make_request(
     service: TaskService,
     *,
     agent: str,
-    cwd: Path,
+    cwd: Path | None,
     permission: str,
     timeout: str | None,
     prompt_file: Path | None,
     files: tuple[Path, ...],
     images: tuple[Path, ...],
+    continue_run_id: str | None,
 ) -> TaskRequest:
     timeout_seconds = (
         service.config.policy.default_timeout if timeout is None else parse_duration(timeout)
@@ -173,6 +180,7 @@ def _make_request(
         timeout_seconds=timeout_seconds,
         files=list(files),
         images=list(images),
+        continue_run_id=continue_run_id,
     )
 
 
@@ -231,7 +239,7 @@ def _agent_summaries(config: AppConfig) -> list[dict[str, Any]]:
 @click.version_option(version=__version__)
 @click.pass_context
 def cli(context: click.Context, config_path: Path | None, output_format: str) -> None:
-    """Delegate bounded one-shot tasks to installed Agent CLIs."""
+    """Delegate bounded task turns to installed Agent CLIs."""
     context.ensure_object(dict)
     context.obj.update(config_path=config_path, output_format=output_format)
 
@@ -291,12 +299,13 @@ def _execute_task(
     *,
     blocking: bool,
     agent: str,
-    cwd: Path,
+    cwd: Path | None,
     permission: str,
     timeout: str | None,
     prompt_file: Path | None,
     files: tuple[Path, ...],
     images: tuple[Path, ...],
+    continue_run_id: str | None,
     config_path: Path | None,
     output_format: str | None,
 ) -> int:
@@ -311,6 +320,7 @@ def _execute_task(
         prompt_file=prompt_file,
         files=files,
         images=images,
+        continue_run_id=continue_run_id,
     )
     data = service.run_task(request) if blocking else service.start_task(request)
     return _emit_task(
@@ -325,12 +335,13 @@ def _execute_task(
 def run_command(
     context: click.Context,
     agent: str,
-    cwd: Path,
+    cwd: Path | None,
     permission: str,
     timeout: str | None,
     prompt_file: Path | None,
     files: tuple[Path, ...],
     images: tuple[Path, ...],
+    continue_run_id: str | None,
     config_path: Path | None,
     output_format: str | None,
 ) -> int:
@@ -345,6 +356,7 @@ def run_command(
         prompt_file=prompt_file,
         files=files,
         images=images,
+        continue_run_id=continue_run_id,
         config_path=config_path,
         output_format=output_format,
     )
@@ -357,12 +369,13 @@ def run_command(
 def start_command(
     context: click.Context,
     agent: str,
-    cwd: Path,
+    cwd: Path | None,
     permission: str,
     timeout: str | None,
     prompt_file: Path | None,
     files: tuple[Path, ...],
     images: tuple[Path, ...],
+    continue_run_id: str | None,
     config_path: Path | None,
     output_format: str | None,
 ) -> int:
@@ -377,6 +390,7 @@ def start_command(
         prompt_file=prompt_file,
         files=files,
         images=images,
+        continue_run_id=continue_run_id,
         config_path=config_path,
         output_format=output_format,
     )
