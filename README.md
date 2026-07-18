@@ -71,11 +71,19 @@ Replace `codex` with the worker you installed. `doctor` checks its executable, v
 
 `init` creates the user configuration only when it is missing. It does not overwrite existing settings. Built-in presets are enabled by default. Install and authenticate only the workers you plan to use.
 
+Upgrade an existing installation with:
+
+```bash
+uv tool upgrade cliexec
+```
+
 Install the packaged Skill if Claude Code or Codex will use CLIExec as a controller:
 
 ```bash
 cliexec skill install --target all
 ```
+
+If you installed the Skill before, run this command again after upgrading CLIExec to update it.
 
 The Skill is optional for direct terminal use. Run `cliexec --help` for manual usage; session-capable workers can continue the latest terminal run with `cliexec run AGENT --continue RUN_ID`. See the [packaged CLIExec Skill](skills/cliexec/SKILL.md) for the controller workflow, task commands, result contract, exit codes, failure handling, and complete continuation rules.
 

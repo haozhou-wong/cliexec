@@ -71,11 +71,19 @@ cliexec doctor codex
 
 `init` 只会在用户配置不存在时创建文件，不会覆盖已有设置。内置 preset 默认启用，只需安装并认证准备使用的 worker。
 
+升级已有安装：
+
+```bash
+uv tool upgrade cliexec
+```
+
 如果要让 Claude Code 或 Codex 把 CLIExec 当作 controller，再安装随包发布的 Skill：
 
 ```bash
 cliexec skill install --target all
 ```
+
+如果之前安装过 Skill，升级 CLIExec 后请重新运行这条命令以同步更新。
 
 直接在终端使用 CLIExec 时不必安装 Skill。手动操作可以查看 `cliexec --help`；支持 session 的 worker 可通过 `cliexec run AGENT --continue RUN_ID` 续接最新的 terminal run。Controller 的工作方式、任务命令、结果契约、exit code、失败处理和完整续接规则见 [CLIExec Skill](skills/cliexec/SKILL.md)。
 
